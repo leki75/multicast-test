@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: multicast-test
+  name: multicast-test
+  namespace: staging
+spec:
+  containers:
+  - image: leki75/multicast-test:v0.0.1
+    imagePullPolicy: Always
+    name: multicast-test
+  hostNetwork: true
+  nodeName: worker-4
