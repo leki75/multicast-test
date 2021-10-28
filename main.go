@@ -14,34 +14,36 @@ const (
 	interfaceName   = "bond0"
 )
 
-func nasdaq() func(int, []byte) {
+func nasdaq(n int) func(int, []byte) {
 	exp := uint64(0)
+	label := fmt.Sprintf("nasdaq#%d", n)
 	return func(n int, buff []byte) {
 		seq := binary.BigEndian.Uint64(buff[10:])
 		count := binary.BigEndian.Uint16(buff[18:])
 
 		switch exp {
-		case seq:
-			fmt.Println("nasdaq", seq, count)
+		case seq, seq + 1:
+			fmt.Println(label, exp, seq, count, n)
 		default:
-			fmt.Println("WARN: nasdaq", exp, seq, count)
+			fmt.Println("WARN", label, exp, seq, count, n)
 		}
 
 		exp = seq + uint64(count)
 	}
 }
 
-func nyse() func(int, []byte) {
+func nyse(n int) func(int, []byte) {
 	exp := uint32(0)
+	label := fmt.Sprintf("nyse#%d", n)
 	return func(n int, buff []byte) {
 		seq := binary.BigEndian.Uint32(buff[5:])
 		count := buff[9]
 
 		switch exp {
 		case seq, seq + 1:
-			fmt.Println("nyse", seq, count)
+			fmt.Println(label, exp, seq, count, n)
 		default:
-			fmt.Println("WARN: nyse", exp, seq, count)
+			fmt.Println("*"+label, exp, seq, count, n)
 		}
 
 		exp = seq + uint32(count)
@@ -93,17 +95,18 @@ func serveMulticastUDP(address string, handler func(int, []byte)) {
 	}
 }
 
-func main() {
-	type addrMap struct {
-		addr string
-		fn   func(int, []byte)
-	}
+type addrMap struct {
+	addr string
+	fn   func(int) func(int, []byte)
+}
 
-	for _, x := range []addrMap{
-		{"233.46.176.8:55640", nasdaq()},
-		{"224.0.89.0:40000", nyse()},
+func main() {
+	fmt.Println("LABEL", "EXPECTED", "SEQ", "COUNT", "BYTES")
+	for i, x := range []addrMap{
+		{"233.46.176.8:55640", nasdaq},
+		{"224.0.89.0:40000", nyse},
 	} {
-		go serveMulticastUDP(x.addr, x.fn)
+		go serveMulticastUDP(x.addr, x.fn(i))
 	}
 
 	<-make(chan struct{})

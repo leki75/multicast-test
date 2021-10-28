@@ -3,12 +3,24 @@ kind: Pod
 metadata:
   labels:
     app: multicast-test
+    app.kubernetes.io/instance: nemesis
   name: multicast-test
-  namespace: staging
+  namespace: default
 spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                - nemesis
+          topologyKey: "kubernetes.io/hostname"
   containers:
   - image: leki75/multicast-test:v0.0.1
     imagePullPolicy: Always
     name: multicast-test
   hostNetwork: true
-  nodeName: worker-4
+  nodeSelector:
+    env: prod
