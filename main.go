@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"net"
 
 	"github.com/leki75/multicast-test/log"
@@ -15,12 +16,17 @@ type addrHandlers struct {
 	fn   func(int) multicast.HandlerFunc
 }
 
-var iface = "en0"
+var iface string
+
+func init() {
+	flag.StringVar(&iface, "iface", "bond0", "bind multicast addresses to this interface")
+}
 
 func main() {
+	flag.Parse()
+
 	servers := make(map[int]*multicast.UDPServer)
 
-	var err error
 	for i, addrHandler := range []addrHandlers{
 		{ip: net.ParseIP("233.46.176.8"), port: 55640, fn: parser.Nasdaq},  // Nasdaq, Trade, Tape A, New York, Line A
 		{ip: net.ParseIP("233.46.176.24"), port: 55640, fn: parser.Nasdaq}, // Nasdaq, Trade, Tape A, New York, Line B
@@ -30,8 +36,8 @@ func main() {
 		{ip: net.ParseIP("224.0.89.128"), port: 40000, fn: parser.Nyse},    // Nyse,   Trade, Tape A, New York, Line B
 	} {
 		server, ok := servers[addrHandler.port]
-
 		if !ok {
+			var err error
 			server, err = multicast.NewUDPServer(iface, addrHandler.port)
 			if err != nil {
 				log.Logger.Fatal("new multicast", zap.Error(err))

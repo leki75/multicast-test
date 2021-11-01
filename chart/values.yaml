@@ -1,0 +1,35 @@
+app:
+  interface: "eno1"
+
+image:
+  pullPolicy: Always
+
+# podLabels:
+#   app.kubernetes.io/instance: nemesis
+
+hostNetwork: true
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# nodeSelector:
+#   env: prod
+
+# affinity:
+#   podAntiAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       - labelSelector:
+#           matchExpressions:
+#             - key: app.kubernetes.io/instance
+#               operator: In
+#               values:
+#               - nemesis
+#         topologyKey: "kubernetes.io/hostname"
