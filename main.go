@@ -1,113 +1,55 @@
 package main
 
 import (
-	"encoding/binary"
-	"fmt"
-	"log"
 	"net"
 
-	"golang.org/x/net/ipv4"
+	"github.com/leki75/multicast-test/log"
+	"github.com/leki75/multicast-test/net/multicast"
+	"github.com/leki75/multicast-test/parser"
+	"go.uber.org/zap"
 )
 
-const (
-	maxDatagramSize = 8192
-	interfaceName   = "bond0"
-)
-
-func nasdaq(n int) func(int, []byte) {
-	exp := uint64(0)
-	label := fmt.Sprintf("nasdaq#%d", n)
-	return func(n int, buff []byte) {
-		seq := binary.BigEndian.Uint64(buff[10:])
-		count := binary.BigEndian.Uint16(buff[18:])
-
-		switch exp {
-		case seq, seq + 1:
-			fmt.Println(label, exp, seq, count, n)
-		default:
-			fmt.Println("WARN", label, exp, seq, count, n)
-		}
-
-		exp = seq + uint64(count)
-	}
+type addrHandlers struct {
+	ip   net.IP
+	port int
+	fn   func(int) multicast.HandlerFunc
 }
 
-func nyse(n int) func(int, []byte) {
-	exp := uint32(0)
-	label := fmt.Sprintf("nyse#%d", n)
-	return func(n int, buff []byte) {
-		seq := binary.BigEndian.Uint32(buff[5:])
-		count := buff[9]
-
-		switch exp {
-		case seq, seq + 1:
-			fmt.Println(label, exp, seq, count, n)
-		default:
-			fmt.Println("*"+label, exp, seq, count, n)
-		}
-
-		exp = seq + uint32(count)
-	}
-}
-
-func serveMulticastUDP(address string, handler func(int, []byte)) {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		log.Fatal("SplitHostPort:", err)
-	}
-
-	conn, err := net.ListenPacket("udp4", address)
-	if err != nil {
-		log.Fatal("ListenPacket:", err)
-	}
-
-	iface, err := net.InterfaceByName(interfaceName)
-	if err != nil {
-		log.Fatal("InterfaceByName:", err)
-	}
-
-	group := net.ParseIP(host)
-	pconn := ipv4.NewPacketConn(conn)
-	if err := pconn.JoinGroup(iface, &net.UDPAddr{IP: group}); err != nil {
-		log.Fatal("JoinGroup:", err)
-	}
-
-	if err := pconn.SetControlMessage(ipv4.FlagDst, true); err != nil {
-		log.Fatal("SetContrlMessage:", err)
-	}
-
-	buff := make([]byte, maxDatagramSize)
-	for {
-		n, cm, _, err := pconn.ReadFrom(buff)
-		if err != nil {
-			log.Fatal("ReadFrom failed:", err)
-		}
-
-		if !cm.Dst.IsMulticast() {
-			continue
-		}
-
-		if !cm.Dst.Equal(group) {
-			continue
-		}
-
-		handler(n, buff)
-	}
-}
-
-type addrMap struct {
-	addr string
-	fn   func(int) func(int, []byte)
-}
+var iface = "en0"
 
 func main() {
-	fmt.Println("LABEL", "EXPECTED", "SEQ", "COUNT", "BYTES")
-	for i, x := range []addrMap{
-		{"233.46.176.8:55640", nasdaq},
-		{"224.0.89.0:40000", nyse},
+	servers := make(map[int]*multicast.UDPServer)
+
+	var err error
+	for i, addrHandler := range []addrHandlers{
+		{ip: net.ParseIP("233.46.176.8"), port: 55640, fn: parser.Nasdaq},  // Nasdaq, Trade, Tape A, New York, Line A
+		{ip: net.ParseIP("233.46.176.24"), port: 55640, fn: parser.Nasdaq}, // Nasdaq, Trade, Tape A, New York, Line B
+		{ip: net.ParseIP("233.46.176.72"), port: 55640, fn: parser.Nasdaq}, // Nasdaq, Trade, Tape A, Chicago,  Line A
+		{ip: net.ParseIP("233.46.176.88"), port: 55640, fn: parser.Nasdaq}, // Nasdaq, Trade, Tape A, Chicago,  Line B
+		{ip: net.ParseIP("224.0.89.0"), port: 40000, fn: parser.Nyse},      // Nyse,   Trade, Tape A, New York, Line A
+		{ip: net.ParseIP("224.0.89.128"), port: 40000, fn: parser.Nyse},    // Nyse,   Trade, Tape A, New York, Line B
 	} {
-		go serveMulticastUDP(x.addr, x.fn(i))
+		server, ok := servers[addrHandler.port]
+
+		if !ok {
+			server, err = multicast.NewUDPServer(iface, addrHandler.port)
+			if err != nil {
+				log.Logger.Fatal("new multicast", zap.Error(err))
+			}
+			servers[addrHandler.port] = server
+		}
+
+		if err := server.Listen(addrHandler.ip, addrHandler.fn(i)); err != nil {
+			log.Logger.Fatal("multicast listen", zap.Error(err))
+		}
 	}
 
-	<-make(chan struct{})
+	var errorCh = make(chan error)
+	for _, s := range servers {
+		go func(s *multicast.UDPServer) {
+			errorCh <- s.Serve()
+		}(s)
+	}
+
+	log.Logger.Fatal("multicast listen", zap.Error(<-errorCh))
 }
