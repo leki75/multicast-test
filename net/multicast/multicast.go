@@ -23,7 +23,7 @@ type UDPServer struct {
 
 type HandlerFunc func(int, []byte)
 
-func NewUDPServer(ifname string, port int) (*UDPServer, error) {
+func NewUDPListener(ifname string, port int) (*UDPServer, error) {
 	iface, err := net.InterfaceByName(ifname)
 	if err != nil {
 		return nil, err
@@ -58,17 +58,18 @@ func NewUDPServer(ifname string, port int) (*UDPServer, error) {
 	}, nil
 }
 
-func (us *UDPServer) Listen(ip net.IP, handler HandlerFunc) error {
-	if ip.To4() == nil {
-		return errors.New("non IPv4 address")
+func (us *UDPServer) Join(ip net.IP, handler HandlerFunc) error {
+	ipv4addr := ip.To4()
+	if ipv4addr == nil || !ipv4addr.IsMulticast() {
+		return errors.New("non IPv4 multicast address")
 	}
 
-	if err := us.conn.JoinGroup(us.iface, &net.UDPAddr{IP: ip}); err != nil {
+	if err := us.conn.JoinGroup(us.iface, &net.UDPAddr{IP: ipv4addr}); err != nil {
 		return err
 	}
 
 	var addr [4]byte
-	copy(addr[:], ip.To4())
+	copy(addr[:], ipv4addr)
 	us.addrHandlers[addr] = handler
 
 	return nil

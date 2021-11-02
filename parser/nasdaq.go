@@ -10,19 +10,32 @@ import (
 )
 
 func Nasdaq(n int) multicast.HandlerFunc {
-	var logger func(string, ...zap.Field)
 	expectedID := uint64(0)
 	label := fmt.Sprintf("nasdaq#%d", n)
 
-	return func(packetLength int, buff []byte) {
-		sequenceID := binary.BigEndian.Uint64(buff[10:])
-		blockCount := binary.BigEndian.Uint16(buff[18:])
+	// https://www.utpplan.com/DOC/UtpBinaryOutputSpec.pdf
+	return func(packetLength int, buf []byte) {
+		sequenceID := binary.BigEndian.Uint64(buf[10:])
+		blockCount := binary.BigEndian.Uint16(buf[18:])
 
-		switch expectedID {
-		case sequenceID, sequenceID + 1:
-			logger = log.Logger.Info
+		var category []byte
+		block := buf[20:]
+		length := uint16(0)
 
-		default:
+		if blockCount == 0xFFFF {
+			goto log
+		}
+
+		for i := blockCount; i > 0; i-- {
+			length = binary.BigEndian.Uint16(block[0:])
+			category = append(category, block[3:5]...)
+			category = append(category, ',')
+			block = block[length+2:]
+		}
+
+	log:
+		logger := log.Logger.Info
+		if expectedID < sequenceID {
 			logger = log.Logger.Warn
 		}
 
@@ -32,6 +45,7 @@ func Nasdaq(n int) multicast.HandlerFunc {
 			zap.Uint64("seq", sequenceID),
 			zap.Uint16("cnt", blockCount),
 			zap.Int("len", packetLength),
+			zap.ByteString("typ", category),
 		)
 
 		expectedID = sequenceID + uint64(blockCount)

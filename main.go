@@ -38,14 +38,14 @@ func main() {
 		server, ok := servers[addrHandler.port]
 		if !ok {
 			var err error
-			server, err = multicast.NewUDPServer(iface, addrHandler.port)
+			server, err = multicast.NewUDPListener(iface, addrHandler.port)
 			if err != nil {
 				log.Logger.Fatal("new multicast", zap.Error(err))
 			}
 			servers[addrHandler.port] = server
 		}
 
-		if err := server.Listen(addrHandler.ip, addrHandler.fn(i)); err != nil {
+		if err := server.Join(addrHandler.ip, addrHandler.fn(i)); err != nil {
 			log.Logger.Fatal("multicast listen", zap.Error(err))
 		}
 	}
